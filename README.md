@@ -13,12 +13,12 @@ Telegram-бот для приватной супергруппы ComplexBar с �
 
 ## Локальный запуск
 
-Требуется Python 3.11 или новее.
+Требуется Python 3.10 или новее. На сервере проект проверен с Python 3.13.
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 cp .env.example .env
 python bot.py
 ```
@@ -49,3 +49,107 @@ python bot.py
 ```bash
 python -m unittest -v
 ```
+
+## Развёртывание на сервере
+
+Бот развёртывается вне публичного каталога сайта. Это защищает `.env` и SQLite-базу от доступа через веб-сервер.
+
+Требования к серверу:
+
+- Python 3.10 или новее;
+- Git и доступ к `api.telegram.org`;
+- разрешённые постоянные фоновые процессы;
+- GNU Screen или другой менеджер процессов.
+
+Пример установки на хостинге с Python 3.13 от ISPmanager:
+
+```bash
+cd "$HOME"
+git clone https://github.com/alexeevivan/expert-studio-complexbar.git complexbar-bot
+cd complexbar-bot
+
+/opt/ispmanager/python3.13/bin/python3.13 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m unittest -v
+```
+
+Создайте серверный `.env` из шаблона и ограничьте доступ к нему:
+
+```bash
+cp .env.example .env
+chmod 600 .env
+nano .env
+```
+
+Для хранения базы вне исходного кода можно указать абсолютный путь:
+
+```dotenv
+DATABASE_PATH=/var/www/<hosting-user>/data/complexbar-bot/data/complexbar.db
+```
+
+Не добавляйте `.env` и SQLite-базу в Git. Не передавайте токен бота, пароль хостинга и приватные SSH-ключи через сообщения или файлы репозитория.
+
+### Постоянный запуск через Screen
+
+Перед серверным запуском остановите локальную копию бота. Telegram не допускает одновременную работу двух polling-процессов с одним токеном.
+
+```bash
+cd "$HOME/complexbar-bot"
+mkdir -p logs
+
+screen -dmS complexbar-bot bash -lc \
+  'cd "$HOME/complexbar-bot" && exec .venv/bin/python -u bot.py >> logs/bot.log 2>&1'
+```
+
+Проверка процесса и журнала:
+
+```bash
+screen -ls
+tail -n 30 "$HOME/complexbar-bot/logs/bot.log"
+```
+
+Управление процессом:
+
+```bash
+# Подключиться к работающей сессии
+screen -r complexbar-bot
+
+# Остановить бота
+screen -S complexbar-bot -X quit
+
+# Смотреть журнал в реальном времени
+tail -f "$HOME/complexbar-bot/logs/bot.log"
+```
+
+Чтобы выйти из подключённой сессии без остановки бота, нажмите `Ctrl+A`, затем `D`.
+
+Screen сохраняет процесс после выхода из SSH, но не запускает его после перезагрузки сервера. Для автоматического восстановления потребуется отдельная задача Cron или менеджер процессов.
+
+### Обновление бота на сервере
+
+```bash
+cd "$HOME/complexbar-bot"
+screen -S complexbar-bot -X quit
+
+git pull --ff-only
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m unittest -v
+
+mkdir -p logs
+screen -dmS complexbar-bot bash -lc \
+  'cd "$HOME/complexbar-bot" && exec .venv/bin/python -u bot.py >> logs/bot.log 2>&1'
+```
+
+## Приватный GitHub-репозиторий
+
+Репозиторий можно сделать приватным. Уже запущенный бот продолжит работать, потому что файлы находятся на сервере.
+
+После смены видимости анонимные `git clone` и `git pull` перестанут работать. Для последующих обновлений настройте на сервере отдельный SSH deploy key с доступом только на чтение и замените адрес `origin`:
+
+```bash
+git remote set-url origin git@github.com:alexeevivan/expert-studio-complexbar.git
+```
+
+Не сохраняйте GitHub-токены или приватную часть deploy key в репозитории.
